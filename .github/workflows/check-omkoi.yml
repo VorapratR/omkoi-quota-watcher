@@ -5,6 +5,9 @@ on:
     - cron: "*/3 * * * *"   # รันทุก 15 นาที (เวลาตาม UTC)
   workflow_dispatch:          # กด manual ได้
 
+permissions:
+  contents: write 
+   
 jobs:
   check-quota:
     runs-on: ubuntu-latest
