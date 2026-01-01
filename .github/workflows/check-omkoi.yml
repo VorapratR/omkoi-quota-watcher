@@ -2,12 +2,16 @@ name: Check Omkoi quota
 
 on:
   schedule:
-    - cron: "* * * * *"   # รันทุก 15 นาที (เวลาตาม UTC)
+    - cron: "*/15 * * * *"   # รันทุก 15 นาที (เวลา UTC)
   workflow_dispatch:          # กด manual ได้
 
 permissions:
-  contents: write 
-   
+  contents: write
+
+concurrency:
+  group: omkoi-quota
+  cancel-in-progress: true
+
 jobs:
   check-quota:
     runs-on: ubuntu-latest
@@ -18,23 +22,36 @@ jobs:
 
       - name: Get current time (UTC+7) and call API
         run: |
+          set -euo pipefail
+
           DATE_TO_CHECK="2026-01-11"  # วันที่จะเช็ค (ปีคริสต์ศักราช)
 
           # เวลา UTC+7 (แค่ log สวย ๆ)
           TIMESTAMP=$(TZ=Asia/Bangkok date +"%Y-%m-%dT%H:%M:%S%z")
 
-          # เรียก API
-          RESPONSE=$(curl -s "https://wildlifesanctuaryfca16.com/api/omkoi/reservation/check-qty-people?start_date=${DATE_TO_CHECK}")
+          # ติดตั้ง jq
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+
+          # เรียก API (fail ถ้า HTTP 4xx/5xx และ retry กันเน็ตสะดุด)
+          RESPONSE=$(curl -fsS --retry 3 --retry-delay 2 \
+            "https://wildlifesanctuaryfca16.com/api/omkoi/reservation/check-qty-people?start_date=${DATE_TO_CHECK}")
 
           echo "Timestamp: $TIMESTAMP"
           echo "Response: $RESPONSE"
 
-          # ดึงค่า field จาก JSON (ใช้ jq)
-          sudo apt-get update && sudo apt-get install -y jq
+          # ดึงค่า field จาก JSON
+          QTY=$(echo "$RESPONSE" | jq -r '.data.qty')
+          QTY_PEOPLE=$(echo "$RESPONSE" | jq -r '.data.qty_people')
+          QTY_RESERVE=$(echo "$RESPONSE" | jq -r '.data.qty_reserve')
 
-          QTY=$(echo "$RESPONSE" | jq '.data.qty')
-          QTY_PEOPLE=$(echo "$RESPONSE" | jq '.data.qty_people')
-          QTY_RESERVE=$(echo "$RESPONSE" | jq '.data.qty_reserve')
+          echo "qty=$QTY qty_people=$QTY_PEOPLE qty_reserve=$QTY_RESERVE"
+
+          # ✅ เขียนไฟล์เฉพาะตอน qty_reserve > 0
+          if [ "$QTY_RESERVE" -le 0 ]; then
+            echo "qty_reserve <= 0 → skip writing log"
+            exit 0
+          fi
 
           # เตรียมไฟล์ log
           LOG_FILE="omkoi_quota_log.csv"
