@@ -2,7 +2,7 @@ name: Check Omkoi quota
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # รันทุก 15 นาที (เวลา UTC)
+    - cron: "* * * * *" 
   workflow_dispatch:          # กด manual ได้
 
 permissions:
